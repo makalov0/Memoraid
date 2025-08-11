@@ -1,4 +1,4 @@
-// api_service.dart - Create this new file
+// api_service.dart - Complete file with fixed logout
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -92,24 +92,33 @@ class ApiService {
     };
   }
 
-  // Logout user
+  // Logout user - FIXED
   static Future<Map<String, dynamic>> logout() async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/logout.php'),
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: {
+          'logout': '1', // Added this missing parameter that PHP expects
+        },
       );
+      
+      // Always clear local session
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        // Clear local session
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.clear();
         return data;
       } else {
-        return {'success': false, 'message': 'Server error occurred'};
+        // Even if server fails, we cleared local session
+        return {'success': true, 'message': 'Logged out locally'};
       }
     } catch (e) {
-      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+      // Always clear local session even if network fails
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      return {'success': true, 'message': 'Logged out locally'};
     }
   }
 }
