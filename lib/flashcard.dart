@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'api_service.dart';
+import 'models.dart';
+
 class FlashcardGame extends StatefulWidget {
   final String category;
   final Color categoryColor;
@@ -23,64 +26,27 @@ class _FlashcardGameState extends State<FlashcardGame>
   int score = 0;
   int totalAnswered = 0;
   bool gameCompleted = false;
+  bool isLoading = true;
+  String errorMessage = '';
+  int? categoryId;
+  int? userId;
+  
   late AnimationController _flipController;
   late AnimationController _slideController;
   late Animation<double> _flipAnimation;
   late Animation<Offset> _slideAnimation;
 
-  // Sample flashcard data for different categories
-  Map<String, List<Flashcard>> flashcardData = {
-    'Travel': [
-      Flashcard(question: 'Capital of France', answer: 'Paris'),
-      Flashcard(question: 'Largest ocean', answer: 'Pacific Ocean'),
-      Flashcard(question: 'Longest river', answer: 'Nile River'),
-      Flashcard(question: 'Highest mountain', answer: 'Mount Everest'),
-      Flashcard(question: 'Smallest country', answer: 'Vatican City'),
-    ],
-    'Animal': [
-      Flashcard(question: 'Largest mammal', answer: 'Blue Whale'),
-      Flashcard(question: 'Fastest land animal', answer: 'Cheetah'),
-      Flashcard(question: 'Animal with longest neck', answer: 'Giraffe'),
-      Flashcard(question: 'Largest bird', answer: 'Ostrich'),
-      Flashcard(question: 'Animal that never sleeps', answer: 'Bullfrog'),
-    ],
-    'Job': [
-      Flashcard(question: 'Treats sick people', answer: 'Doctor'),
-      Flashcard(question: 'Teaches students', answer: 'Teacher'),
-      Flashcard(question: 'Puts out fires', answer: 'Firefighter'),
-      Flashcard(question: 'Flies airplanes', answer: 'Pilot'),
-      Flashcard(question: 'Designs buildings', answer: 'Architect'),
-    ],
-    'CRC': [
-      Flashcard(question: 'What does CRC stand for?', answer: 'Cyclic Redundancy Check'),
-      Flashcard(question: 'CRC is used for?', answer: 'Error Detection'),
-      Flashcard(question: 'CRC polynomial degree', answer: 'Depends on standard'),
-      Flashcard(question: 'Common CRC-32 polynomial', answer: '0x04C11DB7'),
-      Flashcard(question: 'CRC remainder size', answer: 'Same as polynomial degree'),
-    ],
-    'Read': [
-      Flashcard(question: 'Author of Harry Potter', answer: 'J.K. Rowling'),
-      Flashcard(question: 'Shakespeare\'s famous play', answer: 'Romeo and Juliet'),
-      Flashcard(question: 'First book in Narnia series', answer: 'The Lion, the Witch and the Wardrobe'),
-      Flashcard(question: 'Author of 1984', answer: 'George Orwell'),
-      Flashcard(question: 'Longest book in Bible', answer: 'Psalms'),
-    ],
-    'Food': [
-      Flashcard(question: 'Main ingredient in bread', answer: 'Flour'),
-      Flashcard(question: 'Spice that makes food yellow', answer: 'Turmeric'),
-      Flashcard(question: 'Fruit high in Vitamin C', answer: 'Orange'),
-      Flashcard(question: 'National dish of Italy', answer: 'Pizza/Pasta'),
-      Flashcard(question: 'Sweetest natural substance', answer: 'Honey'),
-    ],
-  };
-
-  List<Flashcard> currentFlashcards = [];
+  // Replace hardcoded data with dynamic lists
+  List<QuizCard> currentFlashcards = [];
 
   @override
   void initState() {
     super.initState();
-    currentFlashcards = flashcardData[widget.category] ?? [];
-    
+    _initializeAnimations();
+    _loadGameData();
+  }
+
+  void _initializeAnimations() {
     _flipController = AnimationController(
       duration: Duration(milliseconds: 600),
       vsync: this,
@@ -108,6 +74,60 @@ class _FlashcardGameState extends State<FlashcardGame>
     ));
   }
 
+  Future<void> _loadGameData() async {
+    try {
+      // Get user session
+      final session = await ApiService.getUserSession();
+      if (!session['isLoggedIn']) {
+        setState(() {
+          errorMessage = 'Please log in to play';
+          isLoading = false;
+        });
+        return;
+      }
+      userId = session['user_id'];
+
+      // Get category by name
+      final categoryResponse = await ApiService.getCategoryByName(widget.category);
+      if (!categoryResponse['success']) {
+        setState(() {
+          errorMessage = categoryResponse['message'];
+          isLoading = false;
+        });
+        return;
+      }
+
+      categoryId = categoryResponse['category']['id'];
+
+      // Get study cards for this category
+      final cardsResponse = await ApiService.getStudyCards(categoryId!);
+      if (!cardsResponse['success']) {
+        setState(() {
+          errorMessage = cardsResponse['message'];
+          isLoading = false;
+        });
+        return;
+      }
+
+      // Convert StudyCard to QuizCard format (word as question, definition as answer)
+      final cardsList = cardsResponse['cards'] as List;
+      currentFlashcards = cardsList.map((card) => QuizCard(
+        id: card['id'],
+        question: card['word'],
+        answer: card['definition'],
+      )).toList();
+
+      setState(() {
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Error loading game: $e';
+        isLoading = false;
+      });
+    }
+  }
+
   @override
   void dispose() {
     _flipController.dispose();
@@ -127,6 +147,15 @@ class _FlashcardGameState extends State<FlashcardGame>
   }
 
   void _nextCard({required bool isCorrect}) async {
+    // Save progress to database
+    if (userId != null) {
+      await ApiService.saveCardProgress(
+        userId: userId!,
+        cardId: currentFlashcards[currentIndex].id,
+        remembered: isCorrect,
+      );
+    }
+
     if (isCorrect) {
       score++;
     }
@@ -140,11 +169,23 @@ class _FlashcardGameState extends State<FlashcardGame>
         showAnswer = false;
       } else {
         gameCompleted = true;
+        _saveSession();
       }
     });
     
     _slideController.reset();
     _flipController.reset();
+  }
+
+  Future<void> _saveSession() async {
+    if (userId != null && categoryId != null) {
+      await ApiService.saveStudySession(
+        userId: userId!,
+        categoryId: categoryId!,
+        totalCards: currentFlashcards.length,
+        rememberedCount: score,
+      );
+    }
   }
 
   void _restartGame() {
@@ -198,7 +239,64 @@ class _FlashcardGameState extends State<FlashcardGame>
           ],
         ),
       ),
-      body: gameCompleted ? _buildGameCompleted() : _buildGameContent(),
+      body: isLoading ? _buildLoading() : (errorMessage.isNotEmpty ? _buildError() : (gameCompleted ? _buildGameCompleted() : _buildGameContent())),
+    );
+  }
+
+  Widget _buildLoading() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(color: widget.categoryColor),
+          SizedBox(height: 20),
+          Text(
+            'Loading flashcards...',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildError() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 80,
+            color: Colors.grey[400],
+          ),
+          SizedBox(height: 20),
+          Text(
+            errorMessage,
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[600],
+            ),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                isLoading = true;
+                errorMessage = '';
+              });
+              _loadGameData();
+            },
+            child: Text('Retry'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: widget.categoryColor,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -447,14 +545,23 @@ class _FlashcardGameState extends State<FlashcardGame>
             ),
           ),
           SizedBox(height: 20),
-          Text(
-            currentFlashcards[currentIndex].answer,
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.green[700],
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(12),
             ),
-            textAlign: TextAlign.center,
+            child: Text(
+              currentFlashcards[currentIndex].answer,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.green[700],
+                height: 1.3,
+              ),
+              textAlign: TextAlign.center,
+            ),
           ),
           SizedBox(height: 40),
           Text(
@@ -471,7 +578,7 @@ class _FlashcardGameState extends State<FlashcardGame>
   }
 
   Widget _buildGameCompleted() {
-    double percentage = (score / totalAnswered * 100);
+    double percentage = totalAnswered > 0 ? (score / totalAnswered * 100) : 0;
     
     return Padding(
       padding: EdgeInsets.all(20.0),
@@ -578,6 +685,20 @@ class _FlashcardGameState extends State<FlashcardGame>
   }
 }
 
+// QuizCard class for the flashcard game
+class QuizCard {
+  final int id;
+  final String question;
+  final String answer;
+
+  QuizCard({
+    required this.id,
+    required this.question,
+    required this.answer,
+  });
+}
+
+// Keep your existing Flashcard class for backward compatibility if needed
 class Flashcard {
   final String question;
   final String answer;

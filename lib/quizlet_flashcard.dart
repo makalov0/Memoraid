@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'api_service.dart';
+import 'models.dart';
+
 class QuizletFlashcardGame extends StatefulWidget {
   final String category;
   final Color categoryColor;
@@ -23,6 +26,11 @@ class _QuizletFlashcardGameState extends State<QuizletFlashcardGame>
   int rememberedCount = 0;
   int notRememberedCount = 0;
   bool gameCompleted = false;
+  bool isLoading = true;
+  String errorMessage = '';
+  int? categoryId;
+  int? userId;
+  
   late AnimationController _flipController;
   late AnimationController _swipeController;
   late Animation<double> _flipAnimation;
@@ -30,79 +38,19 @@ class _QuizletFlashcardGameState extends State<QuizletFlashcardGame>
   double _dragDistance = 0.0;
   bool _isDragging = false;
 
-  // Word and definition data for different categories
-  Map<String, List<WordCard>> wordCardData = {
-    'Travel': [
-      WordCard(word: 'Passport', definition: 'Official document for international travel'),
-      WordCard(word: 'Luggage', definition: 'Bags and suitcases for carrying belongings'),
-      WordCard(word: 'Terminal', definition: 'Building at an airport for passengers'),
-      WordCard(word: 'Boarding', definition: 'Getting on an aircraft, ship, or train'),
-      WordCard(word: 'Destination', definition: 'The place where someone is going'),
-      WordCard(word: 'Journey', definition: 'An act of traveling from one place to another'),
-      WordCard(word: 'Itinerary', definition: 'A planned route or journey schedule'),
-      WordCard(word: 'Visa', definition: 'Permission to enter a foreign country'),
-    ],
-    'Animal': [
-      WordCard(word: 'Mammal', definition: 'Warm-blooded animal that feeds milk to babies'),
-      WordCard(word: 'Habitat', definition: 'Natural environment where an animal lives'),
-      WordCard(word: 'Predator', definition: 'Animal that hunts other animals for food'),
-      WordCard(word: 'Herbivore', definition: 'Animal that eats only plants'),
-      WordCard(word: 'Carnivore', definition: 'Animal that eats only meat'),
-      WordCard(word: 'Migration', definition: 'Seasonal movement from one place to another'),
-      WordCard(word: 'Extinct', definition: 'No longer existing; died out completely'),
-      WordCard(word: 'Species', definition: 'Group of similar animals that can breed together'),
-    ],
-    'Job': [
-      WordCard(word: 'Resume', definition: 'Document listing work experience and skills'),
-      WordCard(word: 'Interview', definition: 'Meeting to assess job candidate suitability'),
-      WordCard(word: 'Salary', definition: 'Fixed payment for work, usually yearly'),
-      WordCard(word: 'Promotion', definition: 'Advancement to higher position'),
-      WordCard(word: 'Colleague', definition: 'Person you work with'),
-      WordCard(word: 'Deadline', definition: 'Time limit for completing work'),
-      WordCard(word: 'Supervisor', definition: 'Person who manages your work'),
-      WordCard(word: 'Career', definition: 'Long-term professional path or occupation'),
-    ],
-    'CRC': [
-      WordCard(word: 'Algorithm', definition: 'Step-by-step procedure for calculations'),
-      WordCard(word: 'Polynomial', definition: 'Mathematical expression with variables'),
-      WordCard(word: 'Checksum', definition: 'Value used to verify data integrity'),
-      WordCard(word: 'Binary', definition: 'Number system using only 0 and 1'),
-      WordCard(word: 'Encoding', definition: 'Process of converting data to coded form'),
-      WordCard(word: 'Redundancy', definition: 'Extra bits added for error detection'),
-      WordCard(word: 'Validation', definition: 'Checking data accuracy and completeness'),
-      WordCard(word: 'Protocol', definition: 'Set of rules for data communication'),
-    ],
-    'Read': [
-      WordCard(word: 'Novel', definition: 'Long fictional story in book form'),
-      WordCard(word: 'Genre', definition: 'Category of literature or art'),
-      WordCard(word: 'Protagonist', definition: 'Main character in a story'),
-      WordCard(word: 'Plot', definition: 'Main story sequence of events'),
-      WordCard(word: 'Theme', definition: 'Central idea or message of story'),
-      WordCard(word: 'Biography', definition: 'Written account of someone\'s life'),
-      WordCard(word: 'Fiction', definition: 'Literature describing imaginary events'),
-      WordCard(word: 'Metaphor', definition: 'Figure of speech comparing two things'),
-    ],
-    'Food': [
-      WordCard(word: 'Cuisine', definition: 'Style of cooking from specific region'),
-      WordCard(word: 'Nutrition', definition: 'Process of providing food for health'),
-      WordCard(word: 'Ingredient', definition: 'Component used in cooking recipe'),
-      WordCard(word: 'Seasoning', definition: 'Substances added to enhance flavor'),
-      WordCard(word: 'Organic', definition: 'Produced without synthetic chemicals'),
-      WordCard(word: 'Protein', definition: 'Nutrient essential for body building'),
-      WordCard(word: 'Vitamin', definition: 'Essential nutrient needed in small amounts'),
-      WordCard(word: 'Metabolism', definition: 'Chemical processes in living organisms'),
-    ],
-  };
-
-  List<WordCard> currentCards = [];
-  List<WordCard> rememberedCards = [];
-  List<WordCard> notRememberedCards = [];
+  // Replace hardcoded data with dynamic lists
+  List<StudyCard> currentCards = [];
+  List<StudyCard> rememberedCards = [];
+  List<StudyCard> notRememberedCards = [];
 
   @override
   void initState() {
     super.initState();
-    currentCards = List.from(wordCardData[widget.category] ?? []);
-    
+    _initializeAnimations();
+    _loadGameData();
+  }
+
+  void _initializeAnimations() {
     _flipController = AnimationController(
       duration: Duration(milliseconds: 600),
       vsync: this,
@@ -130,6 +78,56 @@ class _QuizletFlashcardGameState extends State<QuizletFlashcardGame>
     ));
   }
 
+  Future<void> _loadGameData() async {
+    try {
+      // Get user session
+      final session = await ApiService.getUserSession();
+      if (!session['isLoggedIn']) {
+        setState(() {
+          errorMessage = 'Please log in to play';
+          isLoading = false;
+        });
+        return;
+      }
+      userId = session['user_id'];
+
+      // Get category by name
+      final categoryResponse = await ApiService.getCategoryByName(widget.category);
+      if (!categoryResponse['success']) {
+        setState(() {
+          errorMessage = categoryResponse['message'];
+          isLoading = false;
+        });
+        return;
+      }
+
+      categoryId = categoryResponse['category']['id'];
+
+      // Get study cards for this category
+      final cardsResponse = await ApiService.getStudyCards(categoryId!);
+      if (!cardsResponse['success']) {
+        setState(() {
+          errorMessage = cardsResponse['message'];
+          isLoading = false;
+        });
+        return;
+      }
+
+      // Convert JSON to StudyCard objects
+      final cardsList = cardsResponse['cards'] as List;
+      currentCards = cardsList.map((card) => StudyCard.fromJson(card)).toList();
+
+      setState(() {
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Error loading game: $e';
+        isLoading = false;
+      });
+    }
+  }
+
   @override
   void dispose() {
     _flipController.dispose();
@@ -151,6 +149,15 @@ class _QuizletFlashcardGameState extends State<QuizletFlashcardGame>
   void _handleSwipe(bool remember) async {
     final currentCard = currentCards[currentIndex];
     
+    // Save progress to database
+    if (userId != null) {
+      await ApiService.saveCardProgress(
+        userId: userId!,
+        cardId: currentCard.id,
+        remembered: remember,
+      );
+    }
+    
     if (remember) {
       rememberedCards.add(currentCard);
       rememberedCount++;
@@ -159,10 +166,9 @@ class _QuizletFlashcardGameState extends State<QuizletFlashcardGame>
       notRememberedCount++;
     }
     
-    // Fixed: Animate card out in correct direction
     _swipeAnimation = Tween<Offset>(
       begin: Offset.zero,
-      end: remember ? Offset(1.5, 0.0) : Offset(-1.5, 0.0), // Right for remember, left for don't remember
+      end: remember ? Offset(1.5, 0.0) : Offset(-1.5, 0.0),
     ).animate(CurvedAnimation(
       parent: _swipeController,
       curve: Curves.easeInOut,
@@ -176,11 +182,23 @@ class _QuizletFlashcardGameState extends State<QuizletFlashcardGame>
         showDefinition = false;
       } else {
         gameCompleted = true;
+        _saveSession();
       }
     });
     
     _swipeController.reset();
     _flipController.reset();
+  }
+
+  Future<void> _saveSession() async {
+    if (userId != null && categoryId != null) {
+      await ApiService.saveStudySession(
+        userId: userId!,
+        categoryId: categoryId!,
+        totalCards: currentCards.length,
+        rememberedCount: rememberedCount,
+      );
+    }
   }
 
   void _restartGame() {
@@ -251,7 +269,64 @@ class _QuizletFlashcardGameState extends State<QuizletFlashcardGame>
           ],
         ),
       ),
-      body: gameCompleted ? _buildGameCompleted() : _buildGameContent(),
+      body: isLoading ? _buildLoading() : (errorMessage.isNotEmpty ? _buildError() : (gameCompleted ? _buildGameCompleted() : _buildGameContent())),
+    );
+  }
+
+  Widget _buildLoading() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(color: widget.categoryColor),
+          SizedBox(height: 20),
+          Text(
+            'Loading study cards...',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildError() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 80,
+            color: Colors.grey[400],
+          ),
+          SizedBox(height: 20),
+          Text(
+            errorMessage,
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[600],
+            ),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                isLoading = true;
+                errorMessage = '';
+              });
+              _loadGameData();
+            },
+            child: Text('Retry'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: widget.categoryColor,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -365,12 +440,9 @@ class _QuizletFlashcardGameState extends State<QuizletFlashcardGame>
                   _dragDistance = 0.0;
                 });
                 
-                // Fixed swipe direction logic
                 if (details.velocity.pixelsPerSecond.dx > 500) {
-                  // Swipe right (positive velocity) - Remember
                   _handleSwipe(true);
                 } else if (details.velocity.pixelsPerSecond.dx < -500) {
-                  // Swipe left (negative velocity) - Don't remember
                   _handleSwipe(false);
                 }
               } : null,
@@ -748,6 +820,7 @@ class _QuizletFlashcardGameState extends State<QuizletFlashcardGame>
   }
 }
 
+// Keep your existing WordCard class or replace it with StudyCard
 class WordCard {
   final String word;
   final String definition;
