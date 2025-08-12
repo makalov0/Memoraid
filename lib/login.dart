@@ -10,9 +10,13 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _usernameController = TextEditingController(); // Changed from email to username
+  final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
+
+  // Add focus nodes for handling Enter key
+  final _usernameFocus = FocusNode();
+  final _passwordFocus = FocusNode();
 
   @override
   void initState() {
@@ -33,6 +37,9 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+    // Dispose focus nodes
+    _usernameFocus.dispose();
+    _passwordFocus.dispose();
     super.dispose();
   }
 
@@ -52,7 +59,6 @@ class _LoginScreenState extends State<LoginScreen> {
       });
 
       if (result['success']) {
-        // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Welcome back, ${result['user']['username']}!'),
@@ -61,12 +67,10 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         );
         
-        // Navigate to home screen
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => IndexScreen()),
         );
       } else {
-        // Show error message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result['message']),
@@ -85,7 +89,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _handleSocialLogin(String provider) {
-    // Handle social login
     print('Login with $provider');
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -104,8 +107,8 @@ class _LoginScreenState extends State<LoginScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFF1E3A5F), // Dark blue
-              Color(0xFF87CEEB), // Sky blue
+              Color(0xFF1E3A5F),
+              Color(0xFF87CEEB),
             ],
           ),
         ),
@@ -125,7 +128,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Logo/Title
                         Text(
                           'Memoraid',
                           style: TextStyle(
@@ -142,7 +144,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         SizedBox(height: 32),
 
-                        // Tab buttons
                         Container(
                           decoration: BoxDecoration(
                             color: Colors.grey[200],
@@ -188,10 +189,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         SizedBox(height: 32),
 
-                        // Username field
+                        // Modified Username field with focus and Enter key handling
                         TextFormField(
                           controller: _usernameController,
+                          focusNode: _usernameFocus,
                           enabled: !_isLoading,
+                          textInputAction: TextInputAction.next, // Show "Next" on keyboard
+                          onFieldSubmitted: (value) {
+                            // Move focus to password field when Enter is pressed
+                            FocusScope.of(context).requestFocus(_passwordFocus);
+                          },
                           decoration: InputDecoration(
                             hintText: 'Username or Email',
                             filled: true,
@@ -210,7 +217,6 @@ class _LoginScreenState extends State<LoginScreen> {
                             if (value == null || value.isEmpty) {
                               return 'Please enter your username or email';
                             }
-                            // Accept either a valid username or a valid email
                             final isEmail = RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value);
                             final isUsername = value.length >= 3 && !value.contains(' ');
                             if (!isEmail && !isUsername) {
@@ -221,11 +227,19 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         SizedBox(height: 16),
 
-                        // Password field
+                        // Modified Password field with focus and Enter key handling
                         TextFormField(
                           controller: _passwordController,
+                          focusNode: _passwordFocus,
                           enabled: !_isLoading,
                           obscureText: true,
+                          textInputAction: TextInputAction.done, // Show "Done" on keyboard
+                          onFieldSubmitted: (value) {
+                            // Trigger login when Enter is pressed on password field
+                            if (!_isLoading) {
+                              _handleLogin();
+                            }
+                          },
                           decoration: InputDecoration(
                             hintText: 'Password',
                             filled: true,
@@ -249,7 +263,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         SizedBox(height: 24),
 
-                        // Login button
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
@@ -282,7 +295,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         SizedBox(height: 24),
 
-                        // Or divider
                         Text(
                           'or',
                           style: TextStyle(
@@ -292,7 +304,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         SizedBox(height: 24),
 
-                        // Social login buttons
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [

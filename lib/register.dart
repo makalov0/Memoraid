@@ -16,12 +16,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
 
+  // Add focus nodes for handling Enter key
+  final _usernameFocus = FocusNode();
+  final _emailFocus = FocusNode();
+  final _passwordFocus = FocusNode();
+  final _confirmPasswordFocus = FocusNode();
+
   @override
   void dispose() {
     _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    // Dispose focus nodes
+    _usernameFocus.dispose();
+    _emailFocus.dispose();
+    _passwordFocus.dispose();
+    _confirmPasswordFocus.dispose();
     super.dispose();
   }
 
@@ -42,7 +53,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       });
 
       if (result['success']) {
-        // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Welcome to Memoraid, ${result['user']['username']}!'),
@@ -51,12 +61,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         );
         
-        // Navigate to home screen
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => IndexScreen()),
         );
       } else {
-        // Show error message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result['message']),
@@ -93,8 +101,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFF1E3A5F), // Dark blue
-              Color(0xFF87CEEB), // Sky blue
+              Color(0xFF1E3A5F),
+              Color(0xFF87CEEB),
             ],
           ),
         ),
@@ -114,7 +122,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Logo/Title
                         Text(
                           'Memoraid',
                           style: TextStyle(
@@ -131,7 +138,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         SizedBox(height: 32),
 
-                        // Tab buttons
                         Container(
                           decoration: BoxDecoration(
                             color: Colors.grey[200],
@@ -177,10 +183,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         SizedBox(height: 32),
 
-                        // Username field
+                        // Modified Username field with focus and Enter key handling
                         TextFormField(
                           controller: _usernameController,
+                          focusNode: _usernameFocus,
                           enabled: !_isLoading,
+                          textInputAction: TextInputAction.next,
+                          onFieldSubmitted: (value) {
+                            // Move focus to email field when Enter is pressed
+                            FocusScope.of(context).requestFocus(_emailFocus);
+                          },
                           decoration: InputDecoration(
                             hintText: 'Username',
                             filled: true,
@@ -210,10 +222,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         SizedBox(height: 16),
 
-                        // Email field
+                        // Modified Email field with focus and Enter key handling
                         TextFormField(
                           controller: _emailController,
+                          focusNode: _emailFocus,
                           enabled: !_isLoading,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          onFieldSubmitted: (value) {
+                            // Move focus to password field when Enter is pressed
+                            FocusScope.of(context).requestFocus(_passwordFocus);
+                          },
                           decoration: InputDecoration(
                             hintText: 'Email',
                             filled: true,
@@ -228,7 +247,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ),
                             prefixIcon: Icon(Icons.email, color: Colors.grey[600]),
                           ),
-                          keyboardType: TextInputType.emailAddress,
                           validator: (value) {
                             if (value == null || value.isEmpty) {
                               return 'Please enter your email';
@@ -241,11 +259,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         SizedBox(height: 16),
 
-                        // Password field
+                        // Modified Password field with focus and Enter key handling
                         TextFormField(
                           controller: _passwordController,
+                          focusNode: _passwordFocus,
                           enabled: !_isLoading,
                           obscureText: true,
+                          textInputAction: TextInputAction.next,
+                          onFieldSubmitted: (value) {
+                            // Move focus to confirm password field when Enter is pressed
+                            FocusScope.of(context).requestFocus(_confirmPasswordFocus);
+                          },
                           decoration: InputDecoration(
                             hintText: 'Password',
                             filled: true,
@@ -272,11 +296,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         SizedBox(height: 16),
 
-                        // Confirm Password field
+                        // Modified Confirm Password field with focus and Enter key handling
                         TextFormField(
                           controller: _confirmPasswordController,
+                          focusNode: _confirmPasswordFocus,
                           enabled: !_isLoading,
                           obscureText: true,
+                          textInputAction: TextInputAction.done,
+                          onFieldSubmitted: (value) {
+                            // Trigger registration when Enter is pressed on confirm password field
+                            if (!_isLoading) {
+                              _handleRegister();
+                            }
+                          },
                           decoration: InputDecoration(
                             hintText: 'Confirm password',
                             filled: true,
@@ -303,7 +335,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         SizedBox(height: 24),
 
-                        // Register button
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
@@ -336,7 +367,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         SizedBox(height: 24),
 
-                        // Or divider
                         Text(
                           'or',
                           style: TextStyle(
@@ -346,7 +376,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         SizedBox(height: 24),
 
-                        // Social login buttons
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [

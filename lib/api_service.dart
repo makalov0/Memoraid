@@ -1,4 +1,3 @@
-// api_service.dart - Complete file with fixed logout
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,7 +6,7 @@ class ApiService {
   // Replace with your actual server URL
   static const String baseUrl = 'http://localhost/app-backend';
   // For Android emulator use: 'http://10.0.2.2/app-backend'
-  
+
   // Register user
   static Future<Map<String, dynamic>> register({
     required String username,
@@ -72,6 +71,32 @@ class ApiService {
     }
   }
 
+  // Google Sign-In
+  static Future<Map<String, dynamic>> signInWithGoogle(String idToken) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/google_login.php'),
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: {
+          'id_token': idToken,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          // Save user session locally
+          await _saveUserSession(data['user']);
+        }
+        return data;
+      } else {
+        return {'success': false, 'message': 'Server error'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
   // Save user session locally
   static Future<void> _saveUserSession(Map<String, dynamic> user) async {
     final prefs = await SharedPreferences.getInstance();
@@ -102,11 +127,11 @@ class ApiService {
           'logout': '1', // Added this missing parameter that PHP expects
         },
       );
-      
+
       // Always clear local session
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
-      
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return data;
